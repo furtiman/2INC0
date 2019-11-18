@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 		printf("static uint128_t md5_list[] =\n");
 		printf("{\n");
 
-		// calculate MD5 hash for each argument
+		// Calculate MD5 hash for each argument
 		for (int j = 1; j < argc; j++)
 		{
 			uint128_t hash;
