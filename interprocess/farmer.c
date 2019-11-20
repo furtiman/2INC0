@@ -12,14 +12,16 @@
  * analysis of deadlock freeness etc.
  */
 
-#include <sys/wait.h> //
-#include <sys/types.h> //
-#include <sys/stat.h> //
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #include "common.h"
 
 static char mq_name1[80];
 static char mq_name2[80];
+
+static void getattr(mqd_t mq_fd);
 
 int main (int argc, char * argv[])
 {
@@ -27,7 +29,43 @@ int main (int argc, char * argv[])
     {
         fprintf (stderr, "%s: invalid arguments\n", argv[0]);
     }
-        
+
+
+    pid_t processID; /* Process ID from fork() */
+    mqd_t mq_fd_request;
+    mqd_t mq_fd_response;
+    MQ_REQUEST_MESSAGE req;
+    MQ_RESPONSE_MESSAGE rsp;
+    struct mq_attr attr;
+
+    sprintf(mq_name1, "/mq_request_%s_%d", STUDENT_NAME_1, getpid());
+    sprintf(mq_name2, "/mq_response_%s_%d", STUDENT_NAME_2, getpid());
+
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(MQ_REQUEST_MESSAGE);
+    mq_fd_request = mq_open(mq_name1, O_WRONLY | O_CREAT | O_EXCL, 0600, &attr);
+
+    attr.mq_maxmsg = 10;
+    attr.mq_msgsize = sizeof(MQ_RESPONSE_MESSAGE);
+    mq_fd_response = mq_open(mq_name2, O_RDONLY | O_CREAT | O_EXCL, 0600, &attr);
+
+    getattr(mq_fd_request);
+    getattr(mq_fd_response);
+
+    processID = fork();
+    if (processID < 0)
+    {
+        perror("fork() failed");
+        exit(1);
+    }
+    else
+    {
+        if (processID == 0)
+        {
+            printf("Forked successfully");
+        }
+    }
+   
     // TODO:
     //  * create the message queues (see message_queue_test() in interprocess_basic.c)
     //  * create the child processes (see process_test() and message_queue_test())
@@ -118,3 +156,18 @@ static void message_queue_test(void)
     return (0);
 }
 
+static void getattr(mqd_t mq_fd)
+{
+    struct mq_attr attr;
+    int rtnval;
+
+    rtnval = mq_getattr(mq_fd, &attr);
+    if (rtnval == -1)
+    {
+        perror("mq_getattr() failed");
+        exit(1);
+    }
+    fprintf(stderr, "%d: mqdes=%d max=%ld size=%ld nrof=%ld\n",
+            getpid(),
+            mq_fd, attr.mq_maxmsg, attr.mq_msgsize, attr.mq_curmsgs);
+}
