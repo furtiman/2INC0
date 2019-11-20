@@ -12,18 +12,11 @@
  * analysis of deadlock freeness etc.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <string.h>
-#include <errno.h>  // for perror()
-#include <unistd.h> // for getpid()
-#include <mqueue.h> // for mq-stuff
 #include <time.h>   // for time()
-#include <complex.h>
+#include <complex.h> //
+#include "md5s.h" //
 
 #include "common.h"
-#include "md5s.h"
 
 static void rsleep(int t);
 
