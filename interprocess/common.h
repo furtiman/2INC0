@@ -32,14 +32,16 @@ typedef struct
     uint128_t hash;
     uint16_t hash_sequence_num;
     char assigned_letter;
+    bool stop; /// Wadded this to stop a worker if the hash value has already been found by another worker. not sure if needed
 } MQ_REQUEST_MESSAGE;
 
-// A data structure with 3 members, represents a response from a worker
+// A data structure with 2 members, represents a response from a worker
 typedef struct
 {
     uint16_t hash_sequence_num;
     bool is_found;
 } MQ_RESPONSE_MESSAGE;
+
 
 #endif
 
