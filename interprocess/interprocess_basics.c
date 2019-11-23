@@ -36,8 +36,8 @@
 #define STUDENT_NAME_1 "Ivan Turasov"
 #define STUDENT_NAME_2 "Roy Meijer"
 
-static char mq_name1[80];
-static char mq_name2[80];
+static char mq_name1[80] = STUDENT_NAME_1;
+static char mq_name2[80] = STUDENT_NAME_2;
 
 // A data structure with 3 members
 typedef struct
@@ -73,7 +73,7 @@ static void process_test(void)
         if (processID == 0)
         {
             printf("child  pid:%d\n", getpid());
-            execlp("ps", "ps", "-l", NULL);
+            execlp("./worker", "worker", mq_name1, mq_name2, NULL);
             // or try this one:
             // execlp ("./interprocess_basics", "my_own_name_for_argv0", "first_argument", NULL);
 
@@ -135,7 +135,8 @@ static void message_queue_child(void)
     }
     rsp.g[10] = '\0';
 
-    sleep(3);
+    // sleep(3);
+    printf("HELLLLOOOOO");
     // send the response
     printf("                                   child: sending...\n");
     mq_send(mq_fd_response, (char *)&rsp, sizeof(rsp), 0);
@@ -195,7 +196,7 @@ static void message_queue_test(void)
             printf("parent: sending...\n");
             mq_send(mq_fd_request, (char *)&req, sizeof(req), 0);
 
-            sleep(3);
+            // sleep(3);
             // read the result and store it in the response message
             printf("parent: receiving...\n");
             mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);

@@ -10,9 +10,9 @@
 #define COMMON_H
 
 // Common includes for farmer and worker
-#include <errno.h>    
-#include <unistd.h>         // for ex
-#include <mqueue.h>         // for mq
+#include <errno.h>
+#include <unistd.h> // for ex
+#include <mqueue.h> // for mq
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -21,11 +21,11 @@
 #include "settings.h"
 
 // Maximum size for any message in the tests
-#define MAX_MESSAGE_LENGTH	6
+#define MAX_MESSAGE_LENGTH 6
 
 #define STUDENT_NAME_1 "Ivan Turasov"
 #define STUDENT_NAME_2 "Roy Meijer"
- 
+
 // A data structure with 3 members, represents a request to a worker
 typedef struct
 {
@@ -42,6 +42,5 @@ typedef struct
     bool is_found;
 } MQ_RESPONSE_MESSAGE;
 
-
+static bool md5_list_marker[MD5_LIST_NROF] = {false};
 #endif
-

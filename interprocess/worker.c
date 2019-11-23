@@ -12,87 +12,94 @@
  * analysis of deadlock freeness etc.
  */
 
-#include <time.h>    // for time()
-#include <complex.h> //
-#include "md5s.h"    //
+#include <time.h>
+#include <complex.h>
+#include "md5s.h"
 
 #include "common.h"
 
-/* defines */
-#define ALPHABET_LENGTH (ALPHABET_END_CHAR - ALPHABET_START_CHAR)
+bool printCombination(uint128_t hash, char arr[], int n, int r, char assigned_letter, char *data);
 
-/* local functions*/
+bool combinationUtil(uint128_t hash, char arr[], char data[], int end,
+                     int index, int r);
 
-/// sleep random amount of time
-static void rsleep(int t);
+void printAllKLengthRec(char *prefix,
+                        int k);
 
-/// power integer
-int16_t ipow(int16_t base, int16_t exp);
+static int get_mq_attr_nrof_messages(mqd_t mq_fd);
 
-/// generate strings, hash values and compare hash values
-bool search_hash(uint128_t hash_inp, char found_string[], bool stop);
+// generate strings, hash values and compare hash values  char *found_string,
+bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *result);
 
+int main(int argc, char *argv[])
+{
+    static mqd_t mq_fd_request;
+    static mqd_t mq_fd_response;
+    static MQ_REQUEST_MESSAGE req;
+    static MQ_RESPONSE_MESSAGE rsp;
 
-int main(int argc, char *argv[]) {
-    // TODO:
-    // (see message_queue_test() in interprocess_basic.c)
-    //  * open the two message queues (whose names are provided in the arguments)
-    //  * repeatingly:s
-    //      - read from a message queue the new job to do
-    //      - wait a random amount of time (e.g. rsleep(10000);)
-    //      - do that job
-    //      - write the results to a message queue
-    //    until there are no more tasks to do
-    //  * close the message queues
-
-    mqd_t mq_fd_request;
-    mqd_t mq_fd_response;
-    MQ_REQUEST_MESSAGE req;
-    MQ_RESPONSE_MESSAGE rsp;
-
-    char *gen_string; /// <-- define size?
-
-    /// opens queue's, make read/write only. with argv you can name the queues in terminal
+    // Open queues, make read/write only. With argv you can name the queues in terminal
     mq_fd_request = mq_open(argv[1], O_RDONLY);
     mq_fd_response = mq_open(argv[2], O_WRONLY);
 
-    /// kept the printfs for testing purposes, will remove in the final version
-    // read the message queue and store it in the request message
-    printf("child: receiving...\n");
-
-    ///store request queue
-    mq_receive(mq_fd_request, (char *)&req, sizeof(req), NULL);
-
-    printf("child: received: %d, %d, '%c', '%d'\n", req.hash, req.hash_sequence_num, req.assigned_letter, req.stop);
-
-    if (!(req.stop)) {
-
-        /// sleep for 1 second at maximum
+    while (1)
+    {
         rsleep(1000);
 
-        /// store first letter
-        gen_string[0] = req.assigned_letter;
+        mq_receive(mq_fd_request, (char *)&req, sizeof(req), NULL);
 
-        /// search for the md5 hash value
-        if (search_hash(req.hash, gen_string, req.stop)) {
-            /// print generated string, put generated string and true in response message
-            printf("%s\n", gen_string);
-            rsp.hash_sequence_num = gen_string;
-            rsp.is_found = true;
-        } else {
-            ///put hash number, first letter and false in response message
-            sprintf(rsp.hash_sequence_num, "ha%d_%c", req.hash_sequence_num, req.assigned_letter);
-            rsp.is_found = false;
+        rsp.hash_sequence_num = req.hash_sequence_num;
+
+        if (req.stop)
+        {
+            exit(0);
         }
+        else if (!(md5_list_marker[req.hash_sequence_num]))
+        {
+            // Sleep for 1 second at maximum
+            rsleep(10000);
+            // Search for the md5 hash value
+            char result[MAX_MESSAGE_LENGTH];
+            if (search_hash(req.hash, false, req.assigned_letter, result))
+            {
+                rsp.is_found = true;
+                rsp.hash_sequence_num = req.hash_sequence_num;
+                strcpy(rsp.response, result);
+            }
+            else
+            {
+                rsp.is_found = false;
+            }
 
-        // send the response
-        printf("child: sending...\n");
-        mq_send(mq_fd_response, (char *)&rsp, sizeof(rsp), 0);
+            int msg = get_mq_attr_nrof_messages(mq_fd_response);
+            while (msg >= MQ_MAX_MESSAGES)
+            {
+                msg = get_mq_attr_nrof_messages(mq_fd_response);
+                rsleep(1000);
+            }
+
+            mq_send(mq_fd_response, (char *)&rsp, sizeof(rsp), 0);
+        }
     }
-    mq_close(mq_fd_response);
-    mq_close(mq_fd_request);
 
+    mq_close(mq_fd_request);
+    mq_close(mq_fd_response);
     return (0);
+}
+
+static int get_mq_attr_nrof_messages(mqd_t mq_fd)
+{
+    struct mq_attr attr;
+    int rtnval;
+
+    rtnval = mq_getattr(mq_fd, &attr);
+    if (rtnval == -1)
+    {
+        perror("mq_getattr() failed in worker");
+        exit(1);
+    }
+
+    return attr.mq_curmsgs;
 }
 
 /*
@@ -102,10 +109,12 @@ int main(int argc, char *argv[]) {
  * between 0 and t microseconds
  * At the first call, the random generator is seeded with the current time
  */
-static void rsleep(int t) {
+extern void rsleep(int t)
+{
     static bool first_call = true;
 
-    if (first_call == true) {
+    if (first_call == true)
+    {
         srandom(time(NULL) % getpid());
         first_call = false;
     }
@@ -113,65 +122,72 @@ static void rsleep(int t) {
 }
 
 /*
- * int16_t ipow(int16_t base, int16_t exp)
- *
- * Powers an int
- * This is more efficient than pow because it uses ints, no floats
- * Returns base^exp
- */
-int16_t ipow(int16_t base, int16_t exp) {
-    int16_t result = 1;
-    while (1) {
-        if (exp & 1) {
-            result *= base;
-        }
-        exp >>= 1;
-
-        if (!exp) {
-            break;
-        }
-        base *= base;
-    }
-    return result;
-}
-
-/*
  * search_hash(uint128_t hash_inp, char found_string[])
  *
  * Generates strings of 1, 2, 3, ..., and MAX_MESSAGE_LENGTH characters
- * For each length, it has to generate current_length^ALPHABET_LENGTH characters (calculations from the lecture)
- * 
+ * For each length, it has to generate current_length^ALPHABET_NROF_CHAR characters (calculations from the lecture)
+ *  char *found_string,
  */
-bool search_hash(uint128_t hash_inp, char found_string[], bool stop) {
-    int counter, current_length, array_pos, number;
+bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *result)
+{
+    // bool result = false;
+
+    char alph[ALPHABET_NROF_CHAR];
+    for (int i = 0; i < ALPHABET_NROF_CHAR; ++i)
+    {
+        alph[i] = ALPHABET_START_CHAR + i;
+    }
+    for (int current_length = 1; (current_length <= MAX_MESSAGE_LENGTH) && !stop; current_length++)
+    {
+        char data[current_length + 1];
+        bool found = printCombination(hash_inp, alph, ALPHABET_NROF_CHAR, current_length, assigned_letter, data);
+        if (found)
+        {
+            // printf("'%s'\r\n", data);
+            strcpy(result, data);
+            return true;
+        }
+    }
+    return false;
+}
+
+// The main function that prints all combinations of size r
+// in arr[] of size n. This function mainly uses combinationUtil()
+bool printCombination(uint128_t hash, char arr[], int n, int r, char assigned_letter, char *data)
+{
+    data[0] = assigned_letter;
+    data[1] = '\0';
+
+    return combinationUtil(hash, arr, data, n - 1, 1, r);
+}
+
+/**
+ * @brief 
+ * 
+ * @param arr Input alphabet
+ * @param data Temporary array
+ * @param arr_size Size of the alphabet
+ * @param index Current element being replaced
+ * @param output_size Length of the strings to generate
+ */
+bool combinationUtil(uint128_t hash, char arr[], char data[], int arr_size,
+                     int index, int output_size)
+{
     uint128_t found_hash;
+    // Current combination is ready to be printed, print it
+    if (index == output_size)
+    {
+        found_hash = md5s(data, output_size);
+        return (found_hash == hash);
+    }
 
-    // generate 1 character, 2 character, 3 character, ..., MAX_MESSAGE_LENGTH character strings of letters
-    for (current_length = 1; (current_length < MAX_MESSAGE_LENGTH) && !stop; current_length++) {
-        // there are alphabet_lenght different letters, so ALPHABET_LENGTH^current_length different strings have to be generated
-        for (counter = 0; (counter <= ipow(ALPHABET_LENGTH, current_length) && !stop); counter++) {
-            // store the generated number
-            number = counter;
-
-            /// it has to start with only the assigned letter
-            if (number == 0) {
-                found_string[2] = '\0';
-                /// then it looks for all other possible combinations
-            } else {
-                /// array_pos determanes the number of letters in the string and if number becomes 0, every letter is handeled
-                /// array_pos starts with 1 because found_string[0] is defined.
-                for (array_pos = 1; (number > 0) && !stop; array_pos++) {
-                    found_string[array_pos] = number % ALPHABET_LENGTH + 'a';
-                    found_string[array_pos + 1] = '\0';
-                    number /= ALPHABET_LENGTH;
-                }
-            }
-            //generates hash value based on the generated string
-            found_hash = md5s(found_string, MAX_MESSAGE_LENGTH);
-            //returns true if this is equal to the input hash value
-            if (found_hash == hash_inp) {
-                return true;
-            }
+    for (int i = 0; i <= arr_size; i++)
+    {
+        data[index] = arr[i];
+        data[index + 1] = '\0';
+        if (combinationUtil(hash, arr, data, arr_size, index + 1, output_size))
+        {
+            return true;
         }
     }
     return false;

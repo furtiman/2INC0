@@ -3,3 +3,7 @@
 *.o
 
 interprocess_basics
+worker
+farmer
+worker.o
+farmer.o
