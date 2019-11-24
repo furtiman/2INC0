@@ -1,6 +1,6 @@
 #! /bin/sh
 
-CFLAGS="-Wall -g -c"
+CFLAGS="-Wall -g -c -O2"
 LFLAGS="-lrt -lm"
 
 echo "compiling..."

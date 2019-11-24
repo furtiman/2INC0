@@ -45,19 +45,22 @@ int main(int argc, char *argv[])
     while (1)
     {
         rsleep(1000);
-
+        // printf("Worker Receiving message!\n");
         mq_receive(mq_fd_request, (char *)&req, sizeof(req), NULL);
 
         rsp.hash_sequence_num = req.hash_sequence_num;
 
         if (req.stop)
         {
+            // printf("Received kill!\n");
+            rsleep(10000);
             exit(0);
         }
         else if (!(md5_list_marker[req.hash_sequence_num]))
         {
+            // printf("Worker received letter %c, hash n %d\r\n", req.assigned_letter, req.hash_sequence_num);
             // Sleep for 1 second at maximum
-            rsleep(10000);
+            rsleep(1000);
             // Search for the md5 hash value
             char result[MAX_MESSAGE_LENGTH];
             if (search_hash(req.hash, false, req.assigned_letter, result))
@@ -72,13 +75,14 @@ int main(int argc, char *argv[])
             }
 
             int msg = get_mq_attr_nrof_messages(mq_fd_response);
-            while (msg >= MQ_MAX_MESSAGES)
+            if (msg >= MQ_MAX_MESSAGES)// while (msg >= MQ_MAX_MESSAGES)
             {
                 msg = get_mq_attr_nrof_messages(mq_fd_response);
                 rsleep(1000);
             }
 
             mq_send(mq_fd_response, (char *)&rsp, sizeof(rsp), 0);
+            // printf("Worker sent response with letter %c, hash n %d\r\n", req.assigned_letter, req.hash_sequence_num);
         }
     }
 
@@ -130,8 +134,6 @@ extern void rsleep(int t)
  */
 bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *result)
 {
-    // bool result = false;
-
     char alph[ALPHABET_NROF_CHAR];
     for (int i = 0; i < ALPHABET_NROF_CHAR; ++i)
     {
@@ -143,7 +145,6 @@ bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *resu
         bool found = printCombination(hash_inp, alph, ALPHABET_NROF_CHAR, current_length, assigned_letter, data);
         if (found)
         {
-            // printf("'%s'\r\n", data);
             strcpy(result, data);
             return true;
         }

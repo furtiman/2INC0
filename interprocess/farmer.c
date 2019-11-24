@@ -21,7 +21,11 @@
 static char mq_name1[80];
 static char mq_name2[80];
 
-static void getattr(mqd_t mq_fd);
+int sent = 0;
+int received = 0;
+
+static int get_mq_attr_nrof_messages(mqd_t mq_fd);
+// static int get_mq_nrof_messages(mqd_t mq);
 
 int main(int argc, char *argv[])
 {
@@ -30,173 +34,152 @@ int main(int argc, char *argv[])
         fprintf(stderr, "%s: invalid arguments\n", argv[0]);
     }
 
-    pid_t processID; /* Process ID from fork() */
+    for (int i = 0; i < MD5_LIST_NROF; ++i)
+    {
+        md5_list_marker[i] = false;
+    }
+
+    // pid_t processID; /* Process ID from fork() */
     static mqd_t mq_fd_request;
     static mqd_t mq_fd_response;
     static MQ_REQUEST_MESSAGE req;
     static MQ_RESPONSE_MESSAGE rsp;
     struct mq_attr attr;
 
+    int found_hashes = 0;
+
+    char responses[MD5_LIST_NROF][MAX_MESSAGE_LENGTH + 1];
+
     sprintf(mq_name1, "/mq_request_%s_%d", STUDENT_NAME_1, getpid());
     sprintf(mq_name2, "/mq_response_%s_%d", STUDENT_NAME_2, getpid());
 
-    attr.mq_maxmsg = 10;
+    attr.mq_maxmsg = MQ_MAX_MESSAGES;
     attr.mq_msgsize = sizeof(MQ_REQUEST_MESSAGE);
     mq_fd_request = mq_open(mq_name1, O_WRONLY | O_CREAT | O_EXCL, 0600, &attr);
 
-    attr.mq_maxmsg = 10;
+    attr.mq_maxmsg = MQ_MAX_MESSAGES;
     attr.mq_msgsize = sizeof(MQ_RESPONSE_MESSAGE);
     mq_fd_response = mq_open(mq_name2, O_RDONLY | O_CREAT | O_EXCL, 0600, &attr);
 
-    getattr(mq_fd_request);
-    getattr(mq_fd_response);
+    get_mq_attr_nrof_messages(mq_fd_request);
+    get_mq_attr_nrof_messages(mq_fd_response);
 
-    for(size_t i = 0; i < ALPHABET_NROF_CHAR; ++i) // Create workers, same amount of letters in alphabet
+    pid_t processes[NROF_WORKERS];
+
+    for (size_t i = 0; i < NROF_WORKERS; ++i) // Create workers, same amount of letters in alphabet
     {
-        // processID = fork();
-    }
-    processID = fork();
-    if (processID < 0)
-    {
-        perror("fork() failed");
-        exit(1);
-    }
-    else
-    {
-        if (processID == 0)
+        processes[i] = fork();
+        if (processes[i] < 0)
         {
-            printf("Forked successfully, child  pid:%d\n", getpid());
-            execlp("./worker", "worker", mq_name1, mq_name2, NULL);
+            perror("fork() of process failed");
+            exit(1);
         }
-        else
+        else if (processes[i] == 0)
         {
+            execlp("./worker", "worker", mq_name1, mq_name2, NULL);
+            exit(0);
+        }
+    }
+
+    for (int hash_num = 0; hash_num < MD5_LIST_NROF; ++hash_num)
+    {
+        for (char letter = ALPHABET_START_CHAR; letter <= ALPHABET_END_CHAR; ++letter)
+        {
+            // printf("Composing message with lettes %c for hash number %d\r\n", letter, hash_num);
+
+            // Break out of the loop if the current hash is already found, start with the next hash
+            // if (md5_list_marker[hash_num])
+            // {
+            // printf("PARENT BROKE, FOUND\r\n");
+            //     break;
+            // }
+            // sleep(1);
+
             // fill request message
-            req.hash = md5_list[1];
-            req.hash_sequence_num = 1;
-            req.assigned_letter = 'a';
+            req.hash = md5_list[hash_num];
+            req.hash_sequence_num = hash_num;
+            req.assigned_letter = letter;
             req.stop = false;
 
-            // sleep(3);
-            // send the request
-            printf("parent: sending...\n");
+            int msg = get_mq_attr_nrof_messages(mq_fd_request);
+            // printf("parent: sending, messages in REQUEST queue %d...\n", msg);
             mq_send(mq_fd_request, (char *)&req, sizeof(req), 0);
+            sent ++;
+            msg = get_mq_attr_nrof_messages(mq_fd_response);
+            // printf("parent: receiving, messages in RESPONSE queue %d...\n", msg);
+            while (msg)
+            {
+                mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);
+                received ++;
+                // sleep(1);
+                // printf("parentLLL: receiving, waiting...\n");
 
-            sleep(3);
-            // read the result and store it in the response message
-            printf("parent: receiving...\n");
-            mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);
+                // printf("Parent received response from hash n %d\r\n", rsp.hash_sequence_num);
+                if (rsp.is_found)
+                {
+                    // printf("parent found hash number %d, it is %s!\n", rsp.hash_sequence_num, rsp.response); // , rsp.response);
+                    // responses[rsp.hash_sequence_num] = rsp.response;
+                    strcpy(responses[rsp.hash_sequence_num], rsp.response);
+                    // md5_list_marker[hash_num] = true;
+                    // printf("%s", responses[rsp.hash_sequence_num]);
+                    found_hashes++;
 
-            // printf("parent: received: %d, '", rsp.e);
-            // printing characters of f[] separately:
-            // for (int i = 0; i < rsp.e; i++)
-            // {
-                printf("%d, ", rsp.hash_sequence_num);
-            // }
-            // printing g[] in one step (because it has the \0-terminator):
-            printf("%d\n", rsp.is_found);
-
-            sleep(1);
-
-            waitpid(processID, NULL, 0); // wait for the child
-
-            mq_close(mq_fd_response);
-            mq_close(mq_fd_request);
-            mq_unlink(mq_name1);
-            mq_unlink(mq_name2);
+                    // printf("Found hashes: %d\r\n", found_hashes);
+                }
+                msg = get_mq_attr_nrof_messages(mq_fd_response);
+            }
         }
     }
 
-    // TODO:
-    //  * create the message queues (see message_queue_test() in interprocess_basic.c)
-    //  * create the child processes (see process_test() and message_queue_test())
-    //  * do the farming
-    //  * wait until the chilren have been stopped (see process_test())
-    //  * clean up the message queues (see message_queue_test())
+    int msg = get_mq_attr_nrof_messages(mq_fd_response);
+    // printf("MESSAGES IN RESPONSE QUEUE %d\n", msg);
+    while (sent != received || msg || found_hashes != MD5_LIST_NROF)
+    {
+        // printf("ENTERED last loop, found hashes: %d\n", found_hashes);
+        mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);
+        received ++;
+        // sleep(1);
+        // printf("parentLLL: receiving, waiting...\n");
+        if (rsp.is_found)
+        {
+            // printf("parent found hash number %d, it is %s!\n", rsp.hash_sequence_num, rsp.response); // , rsp.response);
+            strcpy(responses[rsp.hash_sequence_num], rsp.response);
+            //md5_list_marker[hash_num] = true;
+            found_hashes++;
 
-    // Important notice: make sure that the names of the message queues contain your
-    // student name and the process id (to ensure uniqueness during testing)
+            // printf("Found hashes: %d\r\n", found_hashes);
+        }
+        msg = get_mq_attr_nrof_messages(mq_fd_response);
+    }
+    // printf("EXITED, found hashes: %d\n", found_hashes);
+
+    for (size_t i = 0; i < NROF_WORKERS; ++i) // Create workers, same amount of letters in alphabet
+    {
+        req.stop = true;
+        mq_send(mq_fd_request, (char *)&req, sizeof(req), 0);
+        // printf("Sent kill to worker %d!\n", i);
+    }
+
+    for (size_t i = 0; i < NROF_WORKERS; ++i) // Create workers, same amount of letters in alphabet
+    {
+
+        waitpid(processes[i], NULL, 0); // wait for the child
+        // printf("Joined child %d!\n", i);
+    }
+    // printf("ALL CHILDREN, found %d hashes\n", found_hashes);
+
+    for (int i = 0; i < MD5_LIST_NROF; ++i)
+    {
+        printf("'%s'\r\n", responses[i]);
+    }
+
+    mq_close(mq_fd_response);
+    mq_close(mq_fd_request);
+    mq_unlink(mq_name1);
+    mq_unlink(mq_name2);
 }
 
-// static void message_queue_test(void)
-// {
-//     pid_t processID; /* Process ID from fork() */
-//     mqd_t mq_fd_request;
-//     mqd_t mq_fd_response;
-//     MQ_REQUEST_MESSAGE req;
-//     MQ_RESPONSE_MESSAGE rsp;
-//     struct mq_attr attr;
-
-//     sprintf(mq_name1, "/mq_request_%s_%d", STUDENT_NAME_1, getpid());
-//     sprintf(mq_name2, "/mq_response_%s_%d", STUDENT_NAME_2, getpid());
-
-//     attr.mq_maxmsg = 10;
-//     attr.mq_msgsize = sizeof(MQ_REQUEST_MESSAGE);
-//     mq_fd_request = mq_open(mq_name1, O_WRONLY | O_CREAT | O_EXCL, 0600, &attr);
-
-//     attr.mq_maxmsg = 10;
-//     attr.mq_msgsize = sizeof(MQ_RESPONSE_MESSAGE);
-//     mq_fd_response = mq_open(mq_name2, O_RDONLY | O_CREAT | O_EXCL, 0600, &attr);
-
-//     getattr(mq_fd_request);
-//     getattr(mq_fd_response);
-
-//     processID = fork(); // From this point both child and parent execute
-//     if (processID < 0)
-//     {
-//         // perror("fork() failed");
-//         exit(1);
-//     }
-//     else
-//     {
-//         if (processID == 0)
-//         {
-//             // child-stuff
-//             message_queue_child();
-//             exit(0);
-//         }
-//         else
-//         {
-//             // remaining of the parent stuff
-
-//             // fill request message
-//             req.a = 73;
-//             req.b = 42;
-//             req.c = 'z';
-
-//             sleep(3);
-//             // send the request
-//             printf("parent: sending...\n");
-//             mq_send(mq_fd_request, (char *)&req, sizeof(req), 0);
-
-//             sleep(3);
-//             // read the result and store it in the response message
-//             printf("parent: receiving...\n");
-//             mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);
-
-//             printf("parent: received: %d, '", rsp.e);
-//             // printing characters of f[] separately:
-//             for (int i = 0; i < rsp.e; i++)
-//             {
-//                 printf("%c", rsp.f[i]);
-//             }
-//             // printing g[] in one step (because it has the \0-terminator):
-//             printf("', '%s'\n", rsp.g);
-
-//             sleep(1);
-
-//             waitpid(processID, NULL, 0); // wait for the child
-
-//             mq_close(mq_fd_response);
-//             mq_close(mq_fd_request);
-//             mq_unlink(mq_name1);
-//             mq_unlink(mq_name2);
-//         }
-//     }
-
-//     return (0);
-// }
-
-static void getattr(mqd_t mq_fd)
+static int get_mq_attr_nrof_messages(mqd_t mq_fd)
 {
     struct mq_attr attr;
     int rtnval;
@@ -204,10 +187,9 @@ static void getattr(mqd_t mq_fd)
     rtnval = mq_getattr(mq_fd, &attr);
     if (rtnval == -1)
     {
-        perror("mq_getattr() failed");
+        perror("mq_getattr() failed in farmer");
         exit(1);
     }
-    fprintf(stderr, "%d: mqdes=%d max=%ld size=%ld nrof=%ld\n",
-            getpid(),
-            mq_fd, attr.mq_maxmsg, attr.mq_msgsize, attr.mq_curmsgs);
+
+    return attr.mq_curmsgs;
 }

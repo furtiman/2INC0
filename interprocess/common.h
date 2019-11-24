@@ -40,7 +40,10 @@ typedef struct
 {
     uint16_t hash_sequence_num;
     bool is_found;
+    char response[MAX_MESSAGE_LENGTH + 1];
 } MQ_RESPONSE_MESSAGE;
 
-static bool md5_list_marker[MD5_LIST_NROF] = {false};
+bool md5_list_marker[MD5_LIST_NROF];
+
+extern void rsleep(int t);
 #endif
