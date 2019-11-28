@@ -2,8 +2,8 @@
  * Operating Systems {2INCO} Practical Assignment
  * Interprocess Communication
  *
- * Ivan Turasov
- * Roy Meijer
+ * Ivan Turasov (0988297)
+ * Roy Meijer (1522329)
  *
  * Grading:
  * Students who hand in clean code that fully satisfies the minimum requirements will get an 8. 
@@ -18,18 +18,15 @@
 
 #include "common.h"
 
-bool printCombination(uint128_t hash, char arr[], int n, int r, char assigned_letter, char *data);
+static bool search_hash(uint128_t hash_inp, char assigned_letter, char *result);
 
-bool combinationUtil(uint128_t hash, char arr[], char data[], int end,
-                     int index, int r);
+static bool combination_util_entry(uint128_t hash, char arr[], int n, int r,
+                                   char assigned_letter, char *data);
 
-void printAllKLengthRec(char *prefix,
-                        int k);
+static bool combination_util_recursive(uint128_t hash, char arr[], char data[], int end,
+                                       int index, int r);
 
 static int get_mq_attr_nrof_messages(mqd_t mq_fd);
-
-// generate strings, hash values and compare hash values  char *found_string,
-bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *result);
 
 int main(int argc, char *argv[])
 {
@@ -45,25 +42,20 @@ int main(int argc, char *argv[])
     while (1)
     {
         rsleep(1000);
-        // printf("Worker Receiving message!\n");
         mq_receive(mq_fd_request, (char *)&req, sizeof(req), NULL);
 
         rsp.hash_sequence_num = req.hash_sequence_num;
 
         if (req.stop)
         {
-            // printf("Received kill!\n");
-            rsleep(10000);
             exit(0);
         }
         else if (!(md5_list_marker[req.hash_sequence_num]))
         {
-            // printf("Worker received letter %c, hash n %d\r\n", req.assigned_letter, req.hash_sequence_num);
-            // Sleep for 1 second at maximum
-            rsleep(1000);
+
             // Search for the md5 hash value
-            char result[MAX_MESSAGE_LENGTH];
-            if (search_hash(req.hash, false, req.assigned_letter, result))
+            char result[MAX_MESSAGE_LENGTH + 1];
+            if (search_hash(req.hash, req.assigned_letter, result))
             {
                 rsp.is_found = true;
                 rsp.hash_sequence_num = req.hash_sequence_num;
@@ -75,14 +67,13 @@ int main(int argc, char *argv[])
             }
 
             int msg = get_mq_attr_nrof_messages(mq_fd_response);
-            if (msg >= MQ_MAX_MESSAGES)// while (msg >= MQ_MAX_MESSAGES)
+            if (msg >= MQ_MAX_MESSAGES)
             {
                 msg = get_mq_attr_nrof_messages(mq_fd_response);
-                rsleep(1000);
+                rsleep(1000); // Sleep for at most 1 second
             }
 
             mq_send(mq_fd_response, (char *)&rsp, sizeof(rsp), 0);
-            // printf("Worker sent response with letter %c, hash n %d\r\n", req.assigned_letter, req.hash_sequence_num);
         }
     }
 
@@ -106,12 +97,10 @@ static int get_mq_attr_nrof_messages(mqd_t mq_fd)
     return attr.mq_curmsgs;
 }
 
-/*
- * rsleep(int t)
- *
- * The calling thread will be suspended for a random amount of time
- * between 0 and t microseconds
- * At the first call, the random generator is seeded with the current time
+/**
+ * @brief Sleep a random amount of time between 0 and t microseconds
+ * 
+ * @param t Higher threshold for generating a random pause in ms
  */
 extern void rsleep(int t)
 {
@@ -125,24 +114,29 @@ extern void rsleep(int t)
     usleep(random() % t);
 }
 
-/*
- * search_hash(uint128_t hash_inp, char found_string[])
- *
- * Generates strings of 1, 2, 3, ..., and MAX_MESSAGE_LENGTH characters
- * For each length, it has to generate current_length^ALPHABET_NROF_CHAR characters (calculations from the lecture)
- *  char *found_string,
+/**
+ * @brief This function traverses all possible combinations of strings starting from 'assigned_letter'
+ *        to check if they match the provided hash
+ * 
+ * @param hash_inp Hash value to check combinations against
+ * @param assigned_letter Assigned letter to check the strings
+ * @param result Buffer to copy the found hash to
+ * @return true Hash found with a given letter
+ * @return false Hash not found with a given letter
  */
-bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *result)
+static bool search_hash(uint128_t hash_inp, char assigned_letter, char *result)
 {
     char alph[ALPHABET_NROF_CHAR];
+    // Fill an array with the given alphabet
     for (int i = 0; i < ALPHABET_NROF_CHAR; ++i)
     {
         alph[i] = ALPHABET_START_CHAR + i;
     }
-    for (int current_length = 1; (current_length <= MAX_MESSAGE_LENGTH) && !stop; current_length++)
+    for (int current_length = 1; current_length <= MAX_MESSAGE_LENGTH; current_length++)
     {
         char data[current_length + 1];
-        bool found = printCombination(hash_inp, alph, ALPHABET_NROF_CHAR, current_length, assigned_letter, data);
+        bool found = combination_util_entry(hash_inp, alph, ALPHABET_NROF_CHAR,
+                                            current_length, assigned_letter, data);
         if (found)
         {
             strcpy(result, data);
@@ -152,14 +146,25 @@ bool search_hash(uint128_t hash_inp, bool stop, char assigned_letter, char *resu
     return false;
 }
 
-// The main function that prints all combinations of size r
-// in arr[] of size n. This function mainly uses combinationUtil()
-bool printCombination(uint128_t hash, char arr[], int n, int r, char assigned_letter, char *data)
+/**
+ * @brief 
+ * 
+ * @param hash 
+ * @param arr Alphabet
+ * @param n Alphabet Length
+ * @param r Current string length
+ * @param assigned_letter 
+ * @param data Array with resulting string
+ * @return true 
+ * @return false 
+ */
+static bool combination_util_entry(uint128_t hash, char arr[], int n, int r,
+                                   char assigned_letter, char *data)
 {
     data[0] = assigned_letter;
     data[1] = '\0';
 
-    return combinationUtil(hash, arr, data, n - 1, 1, r);
+    return combination_util_recursive(hash, arr, data, n - 1, 1, r); // n - 1 -- alphabet
 }
 
 /**
@@ -171,8 +176,8 @@ bool printCombination(uint128_t hash, char arr[], int n, int r, char assigned_le
  * @param index Current element being replaced
  * @param output_size Length of the strings to generate
  */
-bool combinationUtil(uint128_t hash, char arr[], char data[], int arr_size,
-                     int index, int output_size)
+static bool combination_util_recursive(uint128_t hash, char arr[], char data[], int arr_size,
+                                       int index, int output_size)
 {
     uint128_t found_hash;
     // Current combination is ready to be printed, print it
@@ -186,7 +191,7 @@ bool combinationUtil(uint128_t hash, char arr[], char data[], int arr_size,
     {
         data[index] = arr[i];
         data[index + 1] = '\0';
-        if (combinationUtil(hash, arr, data, arr_size, index + 1, output_size))
+        if (combination_util_recursive(hash, arr, data, arr_size, index + 1, output_size))
         {
             return true;
         }

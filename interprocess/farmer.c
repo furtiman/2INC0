@@ -2,8 +2,8 @@
  * Operating Systems {2INCO} Practical Assignment
  * Interprocess Communication
  *
- * STUDENT_NAME_1 (STUDENT_NR_1)
- * STUDENT_NAME_2 (STUDENT_NR_2)
+ * Ivan Turasov (0988297)
+ * Roy Meijer (1522329)
  *
  * Grading:
  * Students who hand in clean code that fully satisfies the minimum requirements will get an 8. 
@@ -21,11 +21,11 @@
 static char mq_name1[80];
 static char mq_name2[80];
 
-int sent = 0;
-int received = 0;
+int sent = 0;     // Incremented when a message is sent
+int received = 0; // Incremented when a message is received
+int msg = 0;      // Used to store the current amount of messages in a mq
 
 static int get_mq_attr_nrof_messages(mqd_t mq_fd);
-// static int get_mq_nrof_messages(mqd_t mq);
 
 int main(int argc, char *argv[])
 {
@@ -39,7 +39,6 @@ int main(int argc, char *argv[])
         md5_list_marker[i] = false;
     }
 
-    // pid_t processID; /* Process ID from fork() */
     static mqd_t mq_fd_request;
     static mqd_t mq_fd_response;
     static MQ_REQUEST_MESSAGE req;
@@ -66,7 +65,8 @@ int main(int argc, char *argv[])
 
     pid_t processes[NROF_WORKERS];
 
-    for (size_t i = 0; i < NROF_WORKERS; ++i) // Create workers, same amount of letters in alphabet
+    // Create workers
+    for (size_t i = 0; i < NROF_WORKERS; ++i)
     {
         processes[i] = fork();
         if (processes[i] < 0)
@@ -85,92 +85,62 @@ int main(int argc, char *argv[])
     {
         for (char letter = ALPHABET_START_CHAR; letter <= ALPHABET_END_CHAR; ++letter)
         {
-            // printf("Composing message with lettes %c for hash number %d\r\n", letter, hash_num);
-
-            // Break out of the loop if the current hash is already found, start with the next hash
-            // if (md5_list_marker[hash_num])
-            // {
-            // printf("PARENT BROKE, FOUND\r\n");
-            //     break;
-            // }
-            // sleep(1);
-
-            // fill request message
+            // Fill request message
             req.hash = md5_list[hash_num];
             req.hash_sequence_num = hash_num;
             req.assigned_letter = letter;
             req.stop = false;
 
-            int msg = get_mq_attr_nrof_messages(mq_fd_request);
-            // printf("parent: sending, messages in REQUEST queue %d...\n", msg);
             mq_send(mq_fd_request, (char *)&req, sizeof(req), 0);
-            sent ++;
+            sent++;
             msg = get_mq_attr_nrof_messages(mq_fd_response);
-            // printf("parent: receiving, messages in RESPONSE queue %d...\n", msg);
             while (msg)
             {
                 mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);
-                received ++;
-                // sleep(1);
-                // printf("parentLLL: receiving, waiting...\n");
+                received++;
 
-                // printf("Parent received response from hash n %d\r\n", rsp.hash_sequence_num);
                 if (rsp.is_found)
                 {
-                    // printf("parent found hash number %d, it is %s!\n", rsp.hash_sequence_num, rsp.response); // , rsp.response);
-                    // responses[rsp.hash_sequence_num] = rsp.response;
                     strcpy(responses[rsp.hash_sequence_num], rsp.response);
-                    // md5_list_marker[hash_num] = true;
-                    // printf("%s", responses[rsp.hash_sequence_num]);
                     found_hashes++;
-
-                    // printf("Found hashes: %d\r\n", found_hashes);
                 }
                 msg = get_mq_attr_nrof_messages(mq_fd_response);
             }
         }
     }
 
-    int msg = get_mq_attr_nrof_messages(mq_fd_response);
-    // printf("MESSAGES IN RESPONSE QUEUE %d\n", msg);
+    // All the messages are sent, wait until all hte messages are received
+    msg = get_mq_attr_nrof_messages(mq_fd_response);
     while (sent != received || msg || found_hashes != MD5_LIST_NROF)
     {
-        // printf("ENTERED last loop, found hashes: %d\n", found_hashes);
         mq_receive(mq_fd_response, (char *)&rsp, sizeof(rsp), NULL);
-        received ++;
-        // sleep(1);
-        // printf("parentLLL: receiving, waiting...\n");
+        received++;
         if (rsp.is_found)
         {
-            // printf("parent found hash number %d, it is %s!\n", rsp.hash_sequence_num, rsp.response); // , rsp.response);
             strcpy(responses[rsp.hash_sequence_num], rsp.response);
-            //md5_list_marker[hash_num] = true;
             found_hashes++;
-
-            // printf("Found hashes: %d\r\n", found_hashes);
         }
         msg = get_mq_attr_nrof_messages(mq_fd_response);
     }
-    // printf("EXITED, found hashes: %d\n", found_hashes);
 
-    for (size_t i = 0; i < NROF_WORKERS; ++i) // Create workers, same amount of letters in alphabet
+    // Send mesasges to terminate all the workers
+    for (size_t i = 0; i < NROF_WORKERS; ++i)
     {
         req.stop = true;
         mq_send(mq_fd_request, (char *)&req, sizeof(req), 0);
-        // printf("Sent kill to worker %d!\n", i);
     }
 
-    for (size_t i = 0; i < NROF_WORKERS; ++i) // Create workers, same amount of letters in alphabet
+    // Wait for all the workers to terminate
+    for (size_t i = 0; i < NROF_WORKERS; ++i)
     {
 
-        waitpid(processes[i], NULL, 0); // wait for the child
-        // printf("Joined child %d!\n", i);
+        waitpid(processes[i], NULL, 0);
     }
-    // printf("ALL CHILDREN, found %d hashes\n", found_hashes);
 
+    // Print the collected strings
     for (int i = 0; i < MD5_LIST_NROF; ++i)
     {
-        printf("'%s'\r\n", responses[i]);
+        printf("'%s'\n", responses[i]);
     }
 
     mq_close(mq_fd_response);
@@ -179,6 +149,12 @@ int main(int argc, char *argv[])
     mq_unlink(mq_name2);
 }
 
+/**
+ * @brief Get the attributes of the message queue and return a number of messages that it contains
+ * 
+ * @param mq_fd Message queue
+ * @return int Number of messages in the queue
+ */
 static int get_mq_attr_nrof_messages(mqd_t mq_fd)
 {
     struct mq_attr attr;
