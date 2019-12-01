@@ -24,6 +24,7 @@ static char mq_name2[80];
 int sent = 0;     // Incremented when a message is sent
 int received = 0; // Incremented when a message is received
 int msg = 0;      // Used to store the current amount of messages in a mq
+int found_hashes = 0;
 
 static int get_mq_attr_nrof_messages(mqd_t mq_fd);
 
@@ -34,18 +35,11 @@ int main(int argc, char *argv[])
         fprintf(stderr, "%s: invalid arguments\n", argv[0]);
     }
 
-    for (int i = 0; i < MD5_LIST_NROF; ++i)
-    {
-        md5_list_marker[i] = false;
-    }
-
     static mqd_t mq_fd_request;
     static mqd_t mq_fd_response;
     static MQ_REQUEST_MESSAGE req;
     static MQ_RESPONSE_MESSAGE rsp;
     struct mq_attr attr;
-
-    int found_hashes = 0;
 
     char responses[MD5_LIST_NROF][MAX_MESSAGE_LENGTH + 1];
 
@@ -65,6 +59,25 @@ int main(int argc, char *argv[])
 
     pid_t processes[NROF_WORKERS];
 
+    // Generate a System V IPC key n a file common to worker and farmer
+    key_t markers_key = ftok("common.h", 65);
+
+    int shmid = shmget(markers_key, MD5_LIST_NROF * sizeof(bool), 0666 | IPC_CREAT);
+    if (shmid < 0)
+    {
+        perror("smget returned -1\n");
+        error(-1, errno, " ");
+        exit(-1);
+    }
+
+    bool *md5_list_markers = (bool *)shmat(shmid, NULL, 0);
+
+    for (int i = 0; i < MD5_LIST_NROF; ++i)
+    {
+        md5_list_markers[i] = false;
+    }
+
+    printf("\n");
     // Create workers
     for (size_t i = 0; i < NROF_WORKERS; ++i)
     {
@@ -101,6 +114,7 @@ int main(int argc, char *argv[])
 
                 if (rsp.is_found)
                 {
+                    md5_list_markers[rsp.hash_sequence_num] = true; // Indicate that the given hash is found
                     strcpy(responses[rsp.hash_sequence_num], rsp.response);
                     found_hashes++;
                 }
@@ -117,6 +131,7 @@ int main(int argc, char *argv[])
         received++;
         if (rsp.is_found)
         {
+            md5_list_markers[rsp.hash_sequence_num] = true; // Indicate that the given hash is found
             strcpy(responses[rsp.hash_sequence_num], rsp.response);
             found_hashes++;
         }
@@ -147,6 +162,9 @@ int main(int argc, char *argv[])
     mq_close(mq_fd_request);
     mq_unlink(mq_name1);
     mq_unlink(mq_name2);
+
+    // Detach from shared memory region
+    shmdt(md5_list_markers);
 }
 
 /**

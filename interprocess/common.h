@@ -20,6 +20,10 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include <sys/shm.h> // Shared memory
+#include <sys/ipc.h>
+#include <sys/wait.h>
+
 #include "settings.h"
 
 // Maximum size for any message in the tests
@@ -45,7 +49,13 @@ typedef struct
     char response[MAX_MESSAGE_LENGTH + 1];
 } MQ_RESPONSE_MESSAGE;
 
-bool md5_list_marker[MD5_LIST_NROF];
+// typedef struct marker_struct {
+//     bool md5_list_marker[MD5_LIST_NROF];
+// } marker_str;
+
+// marker_str *markers; // Pointer to marker array
+// int markers_id;
+
 
 /**
  * @brief Sleep a random amount of time between 0 and t microseconds

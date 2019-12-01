@@ -39,6 +39,20 @@ int main(int argc, char *argv[])
     mq_fd_request = mq_open(argv[1], O_RDONLY);
     mq_fd_response = mq_open(argv[2], O_WRONLY);
 
+    // Generate a System V IPC key n a file common to worker and farmer
+    key_t markers_key = ftok("common.h", 65);
+
+    int shmid = shmget(markers_key, MD5_LIST_NROF * sizeof(bool), 0666 | IPC_CREAT);
+
+    if (shmid < 0)
+    {
+        perror("smget returned -1\n");
+        error(-1, errno, " ");
+        exit(-1);
+    }
+
+    bool *md5_list_markers = (bool *)shmat(shmid, NULL, 0);
+
     while (1)
     {
         rsleep(1000);
@@ -50,20 +64,27 @@ int main(int argc, char *argv[])
         {
             exit(0);
         }
-        else if (!(md5_list_marker[req.hash_sequence_num]))
+        else
         {
-
-            // Search for the md5 hash value
-            char result[MAX_MESSAGE_LENGTH + 1];
-            if (search_hash(req.hash, req.assigned_letter, result))
+            if (md5_list_markers[req.hash_sequence_num])
             {
-                rsp.is_found = true;
-                rsp.hash_sequence_num = req.hash_sequence_num;
-                strcpy(rsp.response, result);
+                rsp.is_found = false;
+                // printf("Worker skipped calcuating a hash\n");
             }
             else
             {
-                rsp.is_found = false;
+                // Search for the md5 hash value
+                char result[MAX_MESSAGE_LENGTH + 1];
+                if (search_hash(req.hash, req.assigned_letter, result))
+                {
+                    rsp.is_found = true;
+                    rsp.hash_sequence_num = req.hash_sequence_num;
+                    strcpy(rsp.response, result);
+                }
+                else
+                {
+                    rsp.is_found = false;
+                }
             }
 
             int msg = get_mq_attr_nrof_messages(mq_fd_response);
@@ -79,6 +100,9 @@ int main(int argc, char *argv[])
 
     mq_close(mq_fd_request);
     mq_close(mq_fd_response);
+
+    // Detach from shared memory region
+    shmdt(md5_list_markers);
     return (0);
 }
 
