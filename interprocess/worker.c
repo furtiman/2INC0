@@ -41,17 +41,15 @@ int main(int argc, char *argv[])
 
     // Generate a System V IPC key n a file common to worker and farmer
     key_t markers_key = ftok("common.h", 65);
-
-    int shmid = shmget(markers_key, MD5_LIST_NROF * sizeof(bool), 0666 | IPC_CREAT);
-
+    // Acquire a shared memory region
+    int shmid = shmget(markers_key, sizeof(shared_memory_t), 0666 | IPC_CREAT);
     if (shmid < 0)
     {
-        perror("smget returned -1\n");
-        error(-1, errno, " ");
+        perror("farmer smget returned -1\n");
         exit(-1);
     }
-
-    bool *md5_list_markers = (bool *)shmat(shmid, NULL, 0);
+    // Attach to a shared memory region
+    shared_memory_t *sh_mem = (shared_memory_t *)shmat(shmid, NULL, 0);
 
     while (1)
     {
@@ -66,10 +64,14 @@ int main(int argc, char *argv[])
         }
         else
         {
-            if (md5_list_markers[req.hash_sequence_num])
+            while (sem_wait(&sh_mem->semaphore)) // Acquire the semaphore, reading a shared resource
+                ;
+            bool is_already_found = sh_mem->md5_list_markers[req.hash_sequence_num];
+            sem_post(&sh_mem->semaphore); // Release the semaphore
+
+            if (is_already_found)
             {
                 rsp.is_found = false;
-                // printf("Worker skipped calcuating a hash\n");
             }
             else
             {
@@ -97,12 +99,11 @@ int main(int argc, char *argv[])
             mq_send(mq_fd_response, (char *)&rsp, sizeof(rsp), 0);
         }
     }
-
     mq_close(mq_fd_request);
     mq_close(mq_fd_response);
 
     // Detach from shared memory region
-    shmdt(md5_list_markers);
+    shmdt(sh_mem);
     return (0);
 }
 

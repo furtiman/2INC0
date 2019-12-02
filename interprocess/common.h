@@ -24,6 +24,9 @@
 #include <sys/ipc.h>
 #include <sys/wait.h>
 
+#include <pthread.h> // For mutex
+#include <semaphore.h>
+
 #include "settings.h"
 
 // Maximum size for any message in the tests
@@ -49,12 +52,11 @@ typedef struct
     char response[MAX_MESSAGE_LENGTH + 1];
 } MQ_RESPONSE_MESSAGE;
 
-// typedef struct marker_struct {
-//     bool md5_list_marker[MD5_LIST_NROF];
-// } marker_str;
-
-// marker_str *markers; // Pointer to marker array
-// int markers_id;
+// Data structure for allocating shared memory, it contains the elements shared by the processes
+typedef struct shared_memory {
+    bool md5_list_markers[MD5_LIST_NROF];
+    sem_t semaphore;
+} shared_memory_t;
 
 
 /**

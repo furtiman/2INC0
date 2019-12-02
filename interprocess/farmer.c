@@ -61,23 +61,24 @@ int main(int argc, char *argv[])
 
     // Generate a System V IPC key n a file common to worker and farmer
     key_t markers_key = ftok("common.h", 65);
-
-    int shmid = shmget(markers_key, MD5_LIST_NROF * sizeof(bool), 0666 | IPC_CREAT);
+    // Acquire a shared memory region
+    int shmid = shmget(markers_key, sizeof(shared_memory_t), 0666 | IPC_CREAT);
     if (shmid < 0)
     {
-        perror("smget returned -1\n");
-        error(-1, errno, " ");
+        perror("farmer smget returned -1\n");
         exit(-1);
     }
+    // Attach to a shared memory region
+    shared_memory_t *sh_mem = (shared_memory_t *)shmat(shmid, NULL, 0);
+    // Initialise shared semaphore
+    sem_init(&sh_mem->semaphore, 1, 1);
 
-    bool *md5_list_markers = (bool *)shmat(shmid, NULL, 0);
-
+    // Fill the markers buffer
     for (int i = 0; i < MD5_LIST_NROF; ++i)
     {
-        md5_list_markers[i] = false;
+        sh_mem->md5_list_markers[i] = false;
     }
 
-    printf("\n");
     // Create workers
     for (size_t i = 0; i < NROF_WORKERS; ++i)
     {
@@ -114,7 +115,11 @@ int main(int argc, char *argv[])
 
                 if (rsp.is_found)
                 {
-                    md5_list_markers[rsp.hash_sequence_num] = true; // Indicate that the given hash is found
+                    while (sem_wait(&sh_mem->semaphore)) // Acquire the semaphore, writing to a shared resource
+                        ;
+                    sh_mem->md5_list_markers[rsp.hash_sequence_num] = true; // Indicate that the given hash is found
+                    sem_post(&sh_mem->semaphore);                           // Release the semaphore
+
                     strcpy(responses[rsp.hash_sequence_num], rsp.response);
                     found_hashes++;
                 }
@@ -123,7 +128,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    // All the messages are sent, wait until all hte messages are received
+    // All the messages are sent, wait until all the messages are received
     msg = get_mq_attr_nrof_messages(mq_fd_response);
     while (sent != received || msg || found_hashes != MD5_LIST_NROF)
     {
@@ -131,7 +136,11 @@ int main(int argc, char *argv[])
         received++;
         if (rsp.is_found)
         {
-            md5_list_markers[rsp.hash_sequence_num] = true; // Indicate that the given hash is found
+            while (sem_wait(&sh_mem->semaphore)) // Acquire the semaphore, writing to a shared resource
+                ;
+            sh_mem->md5_list_markers[rsp.hash_sequence_num] = true; // Indicate that the given hash is found
+            sem_post(&sh_mem->semaphore);                           // Release the semaphore
+
             strcpy(responses[rsp.hash_sequence_num], rsp.response);
             found_hashes++;
         }
@@ -148,7 +157,6 @@ int main(int argc, char *argv[])
     // Wait for all the workers to terminate
     for (size_t i = 0; i < NROF_WORKERS; ++i)
     {
-
         waitpid(processes[i], NULL, 0);
     }
 
@@ -164,7 +172,14 @@ int main(int argc, char *argv[])
     mq_unlink(mq_name2);
 
     // Detach from shared memory region
-    shmdt(md5_list_markers);
+    shmdt(sh_mem);
+
+    // Clean up the shared memory location
+    if (shmctl(shmid, IPC_RMID, 0) == -1)
+    {
+        printf("Error deleting shared memory\n");
+    }
+    return 0;
 }
 
 /**
