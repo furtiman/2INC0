@@ -3,8 +3,8 @@
 CFLAGS="-Wall -g -c -O2 -pthread"
 LFLAGS="-lm -lpthread"
 
-echo "compiling..."
-gcc $CFLAGS threaded_basics.c || exit
+echo "compiling flip..."
+gcc $CFLAGS flip.c || exit
 
-echo "linking..."
-gcc -o threaded threaded_basics.o $LFLAGS || exit
+echo "linking flip..."
+gcc -o flip flip.o $LFLAGS || exit
