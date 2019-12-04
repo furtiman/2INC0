@@ -27,4 +27,7 @@
  */
 static uint128_t			buffer [(NROF_PIECES/128) + 1];
 
+void create_mask(uint128_t mask[], uint16_t flip_number);
+void flip_pieces(uint128_t flip_number);
+
 #endif

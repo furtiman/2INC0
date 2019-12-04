@@ -35,151 +35,139 @@
 #include "uint128.h"
 
 // create a bitmask where bit at position n is set
-#define BITMASK(n)          (((uint128_t) 1) << (n))
+#define BITMASK(n) (((uint128_t)1) << (n))
 
 // check if bit n in v is set
-#define BIT_IS_SET(v,n)     (((v) & BITMASK(n)) == BITMASK(n))
+#define BIT_IS_SET(v, n) (((v)&BITMASK(n)) == BITMASK(n))
 
 // set bit n in v
-#define BIT_SET(v,n)        ((v) =  (v) |  BITMASK(n))
+#define BIT_SET(v, n) ((v) = (v) | BITMASK(n))
 
 // clear bit n in v
-#define BIT_CLEAR(v,n)      ((v) =  (v) & ~BITMASK(n))
+#define BIT_CLEAR(v, n) ((v) = (v) & ~BITMASK(n))
 
 // declare a mutex, and it is initialized as well
-static pthread_mutex_t      mutex          = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*-------------------------------------------------------------------------*/
 
-
-static void
-bit_test (void)
+static void bit_test(void)
 {
-    uint128_t     v;
-    
+    uint128_t v;
+
     // set all bits to 1
     v = ~0;
-    
-    printf ("v (all 1's) : %lx%016lx\n", HI(v), LO(v)); 
-    BIT_CLEAR (v, 4);
-    BIT_CLEAR (v, 127);
-    BIT_CLEAR (v, 126);
-    BIT_CLEAR (v, 125);
-    printf ("v (four 0's): %lx%016lx\n", HI(v), LO(v));
-    if (BIT_IS_SET (v, 4))
+
+    printf("v (all 1's) : %lx%016lx\n", HI(v), LO(v));
+    BIT_CLEAR(v, 4);
+    BIT_CLEAR(v, 127);
+    BIT_CLEAR(v, 126);
+    BIT_CLEAR(v, 125);
+    printf("v (four 0's): %lx%016lx\n", HI(v), LO(v));
+    if (BIT_IS_SET(v, 4))
     {
-        printf ("bit %d is set\n", 4);
+        printf("bit %d is set\n", 4);
     }
     else
     {
-        printf ("bit %d is NOT set\n", 4);
+        printf("bit %d is NOT set\n", 4);
     }
-    if (BIT_IS_SET (v, 73))
+    if (BIT_IS_SET(v, 73))
     {
-        printf ("bit %d is set\n", 73);
+        printf("bit %d is set\n", 73);
     }
     else
     {
-        printf ("bit %d is NOT set\n", 73);
+        printf("bit %d is NOT set\n", 73);
     }
-    BIT_SET (v, 4);
-    printf ("v (many 1's): %lx%016lx\n", HI(v), LO(v));
-    printf ("\n");
-}    
-    
-    
-static void *
-my_thread (void * arg)
+    BIT_SET(v, 4);
+    printf("v (many 1's): %lx%016lx\n", HI(v), LO(v));
+    printf("\n");
+}
+
+static void *my_thread(void *arg)
 {
-    int *   argi; 
-    int     i;      
-    int *   rtnval;
-    
-    argi = (int *) arg;     // proper casting before dereferencing (could also be done in one statement)
-    i = *argi;              // get the integer value of the pointer
-    free (arg);             // we retrieved the integer value, so now the pointer can be deleted
-    
-    printf ("        %lx: thread started; parameter=%d\n", pthread_self(), i);
-    
-    sleep (1);
-    
+    int *argi;
+    int i;
+    int *rtnval;
+
+    argi = (int *)arg; // proper casting before dereferencing (could also be done in one statement)
+    i = *argi;         // get the integer value of the pointer
+    free(arg);         // we retrieved the integer value, so now the pointer can be deleted
+
+    printf("        %lx: thread started; parameter=%d\n", pthread_self(), i);
+
+    sleep(1);
+
     // a return value to be given back to the calling main-thread
-    rtnval = malloc (sizeof (int)); // will be freed by the parent-thread
-    *rtnval = 42;           // assign an arbitrary value...
-    return (rtnval);        // you can also use pthread_exit(rtnval);
+    rtnval = malloc(sizeof(int)); // will be freed by the parent-thread
+    *rtnval = 42;                 // assign an arbitrary value...
+    return (rtnval);              // you can also use pthread_exit(rtnval);
 }
 
-
-static void
-thread_test (void)
+static void thread_test(void)
 {
-    int *       parameter;
-    int *       rtnval;
-    pthread_t   thread_id;
-    
+    int *parameter;
+    int *rtnval;
+    pthread_t thread_id;
+
     // parameter to be handed over to the thread
-    parameter = malloc (sizeof (int));  // memory will be freed by the child-thread
-    *parameter = 73;        // assign an arbitrary value...
-    
-    printf ("%lx: starting thread ...\n", pthread_self());
-    pthread_create (&thread_id, NULL, my_thread, parameter);
-    
-    sleep (3);
-    
+    parameter = malloc(sizeof(int)); // memory will be freed by the child-thread
+    *parameter = 73;                 // assign an arbitrary value...
+
+    printf("%lx: starting thread ...\n", pthread_self());
+    pthread_create(&thread_id, NULL, my_thread, parameter);
+
+    sleep(3);
+
     // wait for the thread, and we are interested in the return value
-    pthread_join (thread_id, (void **) &rtnval);
-    
-    printf ("%lx: thread ready; return value=%d\n", pthread_self(), *rtnval);
-    free (rtnval);          // free the memory thas has been allocated by the thread
-    printf ("\n");
+    pthread_join(thread_id, (void **)&rtnval);
+
+    printf("%lx: thread ready; return value=%d\n", pthread_self(), *rtnval);
+    free(rtnval); // free the memory thas has been allocated by the thread
+    printf("\n");
 }
 
-
-static void *
-my_mutex_thread (void * arg)
+static void *my_mutex_thread(void *arg)
 {
-    printf ("        %lx: thread start; wanting to enter CS...\n", pthread_self());
-    pthread_mutex_lock (&mutex);
-    
+    printf("        %lx: thread start; wanting to enter CS...\n", pthread_self());
+    pthread_mutex_lock(&mutex);
+
     // Here we are in the critical section (protected by a mutex)
-    printf ("        %lx: thread entered CS\n", pthread_self());
-    sleep (10);
-    printf ("        %lx: thread leaves CS\n", pthread_self());
-    
-    pthread_mutex_unlock (&mutex);
-    
+    printf("        %lx: thread entered CS\n", pthread_self());
+    sleep(10);
+    printf("        %lx: thread leaves CS\n", pthread_self());
+
+    pthread_mutex_unlock(&mutex);
+
     return (NULL);
 }
 
-
-static void
-thread_mutex_test (void)
+static void thread_mutex_test(void)
 {
-    pthread_t   my_threads[2];
+    pthread_t my_threads[2];
 
-    printf ("%lx: starting first thread ...\n", pthread_self());
-    pthread_create (&my_threads[0], NULL, my_mutex_thread, NULL);
-    sleep (3);
-    printf ("%lx: starting second thread ...\n", pthread_self());
-    pthread_create (&my_threads[1], NULL, my_mutex_thread, NULL);
-    
-    // wait for threads, but we are not interested in the return value 
-    pthread_join (my_threads[0], NULL);
-    pthread_join (my_threads[1], NULL); 
-    
-    printf ("%lx: threads ready\n", pthread_self());
-    printf ("\n");
+    printf("%lx: starting first thread ...\n", pthread_self());
+    pthread_create(&my_threads[0], NULL, my_mutex_thread, NULL);
+    sleep(3);
+    printf("%lx: starting second thread ...\n", pthread_self());
+    pthread_create(&my_threads[1], NULL, my_mutex_thread, NULL);
+
+    // wait for threads, but we are not interested in the return value
+    pthread_join(my_threads[0], NULL);
+    pthread_join(my_threads[1], NULL);
+
+    printf("%lx: threads ready\n", pthread_self());
+    printf("\n");
 }
-
 
 /*-------------------------------------------------------------------------*/
 
-int main (void)
+int main(void)
 {
     bit_test();
     thread_test();
     thread_mutex_test();
-    
+
     return (0);
 }
-
