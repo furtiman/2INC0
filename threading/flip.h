@@ -14,7 +14,7 @@
 /**
  * NROF_PIECES: size of the board; number of pieces to be flipped
  */
-#define NROF_PIECES			3000
+#define NROF_PIECES			3071
 
 /**
  * NROF_THREADS: number of threads that can be run in parallel
@@ -26,8 +26,5 @@
  * buffer[]: datastructure of the pieces; each piece is represented by one bit
  */
 static uint128_t			buffer [(NROF_PIECES/128) + 1];
-
-void create_mask(uint128_t mask[], uint16_t flip_number);
-void flip_pieces(uint128_t flip_number);
 
 #endif
