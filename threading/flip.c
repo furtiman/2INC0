@@ -50,8 +50,7 @@ int main(void)
         {
             if (BIT_IS_SET(buffer[i], j))
             {
-                printf("%d", BOARD_BIT_POSITION(i, j));
-                printf("\n");
+                printf("%d\n", BOARD_BIT_POSITION(i, j));
             }
         }
     }
@@ -67,20 +66,14 @@ static void *create_mask(void *flip_number)
     number = *arg_number;
     free(flip_number);
 
-    for (uint16_t i = 0; i < BUFFER_SIZE; i++)
+    for (uint32_t num = 0; num <= NROF_PIECES; num = num + number)
     {
-        for (uint32_t j = 0; j < 128; ++j)
+        int buffer_position = num / BITS_IN_UINT128;
+        int element_position = num - buffer_position * BITS_IN_UINT128;
         {
-            if (BOARD_BIT_POSITION(i, j) > NROF_PIECES)
-            {
-                break;
-            }
-            if (BOARD_BIT_POSITION(i, j) % number == 0)
-            {
-                pthread_mutex_lock(&mutex);
-                BIT_IS_SET(buffer[i], j) ? BIT_CLEAR(buffer[i], j) : BIT_SET(buffer[i], j);
-                pthread_mutex_unlock(&mutex);
-            }
+            pthread_mutex_lock(&mutex);
+            BIT_IS_SET(buffer[buffer_position], element_position) ? BIT_CLEAR(buffer[buffer_position], element_position) : BIT_SET(buffer[buffer_position], element_position);
+            pthread_mutex_unlock(&mutex);
         }
     }
     return NULL;
