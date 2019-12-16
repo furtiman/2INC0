@@ -40,6 +40,9 @@
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static void create_mask(void *flip_number);
+
+#if NROF_THREADS > 1
 typedef void (*thread_func_t)(void *arg);
 
 // Thread Pool definitions
@@ -64,8 +67,6 @@ typedef struct tpool
     bool stop;
 } tpool_t;
 
-static void create_mask(void *flip_number);
-
 // Thread pool functions
 static tpool_t *tpool_create(size_t num);
 static void tpool_wait(tpool_t *pool);
@@ -79,9 +80,11 @@ static tpool_work_t *tpool_work_create(thread_func_t func, void *arg);
 static void tpool_work_destroy(tpool_work_t *work);
 
 static tpool_work_t *tpool_work_get(tpool_t *thread_pool);
+#endif
 
 int main(void)
 {
+#if NROF_THREADS > 1
     uint32_t *flip_number;
     tpool_t *pool = tpool_create(NROF_THREADS);
 
@@ -91,21 +94,26 @@ int main(void)
         *flip_number = i + 1;
         tpool_add_work(pool, create_mask, flip_number);
     }
-
     tpool_wait(pool);
+    tpool_destroy(pool);
+#else
+    pthread_t thread;
+    uint32_t *flip_number = malloc(sizeof(uint32_t));
+    *flip_number = 1;
 
+    pthread_create(&thread, NULL, (void *)create_mask, flip_number);
+    pthread_join(thread, NULL);
+#endif
     for (uint32_t i = 0; i < BUFFER_SIZE; ++i)
     {
         for (uint32_t j = 0; j < BITS_IN_UINT128; ++j)
         {
             if (BIT_IS_SET(buffer[i], j))
             {
-                printf("%d", BOARD_BIT_POSITION(i, j));
-                printf("\n");
+                printf("%d\n", BOARD_BIT_POSITION(i, j));
             }
         }
     }
-    tpool_destroy(pool);
     return (0);
 }
 
@@ -113,30 +121,38 @@ static void create_mask(void *flip_number)
 {
     uint32_t *arg_number;
     uint32_t number;
-
     arg_number = (uint32_t *)flip_number;
     number = *arg_number;
-    // free(flip_number);
-    for (uint16_t i = 0; i < BUFFER_SIZE; i++)
+#if NROF_THREADS == 1
+    free(flip_number);
+    for (; number <= NROF_PIECES; ++number)
     {
-        for (uint32_t j = 0; j < 128; ++j)
+#endif
+        for (uint16_t i = 0; i < BUFFER_SIZE; i++)
         {
-            if (BOARD_BIT_POSITION(i, j) > NROF_PIECES)
+            for (uint32_t j = 0; j < BITS_IN_UINT128; ++j)
             {
-                break;
-            }
-            if (BOARD_BIT_POSITION(i, j) % number == 0)
-            {
-                pthread_mutex_lock(&mutex);
-                BIT_IS_SET(buffer[i], j) ? BIT_CLEAR(buffer[i], j) : BIT_SET(buffer[i], j);
-                pthread_mutex_unlock(&mutex);
+                if (BOARD_BIT_POSITION(i, j) > NROF_PIECES)
+                {
+                    break;
+                }
+                if (BOARD_BIT_POSITION(i, j) % number == 0)
+                {
+                    pthread_mutex_lock(&mutex);
+                    BIT_IS_SET(buffer[i], j) ? BIT_CLEAR(buffer[i], j) : BIT_SET(buffer[i], j);
+                    pthread_mutex_unlock(&mutex);
+                }
             }
         }
+#if NROF_THREADS == 1
     }
+#endif
 }
 
+#if NROF_THREADS > 1
 // Thread pool functions
-tpool_t *tpool_create(size_t num)
+tpool_t *
+tpool_create(size_t num)
 {
     tpool_t *pool;
     pthread_t thread;
@@ -339,3 +355,4 @@ static void tpool_work_destroy(tpool_work_t *work)
         return;
     free(work);
 }
+#endif
