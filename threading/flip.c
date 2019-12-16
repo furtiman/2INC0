@@ -27,7 +27,7 @@
 
 #define BOARD_BIT_POSITION(buffer_cell, position_in_cell) (buffer_cell * BITS_IN_UINT128 + position_in_cell)
 
-#define BUFFER_SIZE ((NROF_PIECES - 1) / 128) + 1
+#define BUFFER_SIZE ((NROF_PIECES - 1) / BITS_IN_UINT128) + 1
 
 // Create a bitmask where bit at position n is set
 #define BITMASK(n) (((uint128_t)1) << (n))
@@ -42,7 +42,7 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void create_mask(void *flip_number);
 
-#if NROF_THREADS > 1
+#if NROF_THREADS > 1 // If there is only one thread, there is no point in creating a thread pool
 typedef void (*thread_func_t)(void *arg);
 
 // Thread Pool definitions
@@ -84,7 +84,7 @@ static tpool_work_t *tpool_work_get(tpool_t *thread_pool);
 
 int main(void)
 {
-#if NROF_THREADS > 1
+#if NROF_THREADS > 1 // If there is only one thread, there is no point in creating a thread pool
     uint32_t *flip_number;
     tpool_t *pool = tpool_create(NROF_THREADS);
 
@@ -123,30 +123,26 @@ static void create_mask(void *flip_number)
     uint32_t number;
     arg_number = (uint32_t *)flip_number;
     number = *arg_number;
-#if NROF_THREADS == 1
+
+#if NROF_THREADS == 1 // If there is only one thread, there is no point in creating a thread pool
     free(flip_number);
     for (; number <= NROF_PIECES; ++number)
     {
 #endif
-        for (uint16_t i = 0; i < BUFFER_SIZE; i++)
+
+        for (uint32_t num = 0; num <= NROF_PIECES; num = num + number)
         {
-            for (uint32_t j = 0; j < BITS_IN_UINT128; ++j)
-            {
-                if (BOARD_BIT_POSITION(i, j) > NROF_PIECES)
-                {
-                    break;
-                }
-                if (BOARD_BIT_POSITION(i, j) % number == 0)
-                {
-                    pthread_mutex_lock(&mutex);
-                    BIT_IS_SET(buffer[i], j) ? BIT_CLEAR(buffer[i], j) : BIT_SET(buffer[i], j);
-                    pthread_mutex_unlock(&mutex);
-                }
-            }
+            int buffer_position = num / BITS_IN_UINT128;
+            int element_position = num - buffer_position * BITS_IN_UINT128;
+            pthread_mutex_lock(&mutex);
+            BIT_IS_SET(buffer[buffer_position], element_position) ? BIT_CLEAR(buffer[buffer_position], element_position) : BIT_SET(buffer[buffer_position], element_position);
+            pthread_mutex_unlock(&mutex);
         }
+
 #if NROF_THREADS == 1
     }
 #endif
+
 }
 
 #if NROF_THREADS > 1
