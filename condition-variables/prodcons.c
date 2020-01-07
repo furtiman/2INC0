@@ -21,21 +21,45 @@
 #include <errno.h>
 #include <pthread.h>
 
+#include <assert.h>
+
 #include "prodcons.h"
 
+/* buffer control variables */
+static uint8_t occupied = 0, nextin = 0, nextout = 0;
+/* condition variables */
+static pthread_cond_t more = PTHREAD_COND_INITIALIZER, less = PTHREAD_COND_INITIALIZER;
+/* mutual exclusion variables */
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* buffer */
 static ITEM buffer[BUFFER_SIZE];
 
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
-
+/* functions */
 static void rsleep(int t);
 static ITEM get_next_item(void);
 
+/* threads */
+static void *producer(void *arg);
+static void *consumer(void *arg);
+
 int main(void)
 {
-	// TODO:
-	// * startup the producer threads and the consumer thread
-	// * wait until all threads are finished
+	/* defines threads for producers and one consumer thread */
+	pthread_t pro_thread[NROF_PRODUCERS];
+	pthread_t con_thread;
+
+	/* create in loop */
+	for (size_t i = 0; i < NROF_PRODUCERS; i++) {
+    	pthread_create(&pro_thread[i], NULL, producer, NULL);
+	}
+	pthread_create(&con_thread, NULL, consumer, NULL);
+
+	/* join in loop */
+	for (size_t i = 0; i < NROF_PRODUCERS; i++) {
+    	pthread_join(pro_thread[i], NULL);
+	}
+	pthread_join(con_thread, NULL);
 
 	return 0;
 }
@@ -43,49 +67,59 @@ int main(void)
 /* producer thread */
 static void *producer(void *arg)
 {
-	while (true /* TODO: not all items produced */)
-	{
-		// TODO:
-		// * get the new item
+	/* keeps track of number of items produced */
+	static uint16_t items_produced;
+	/* item variable can be used to bypass get_next_item(), to check if the fifo works */
+	//static ITEM item;
+	/* is this considered busy waiting? */
+	while (items_produced < NROF_ITEMS) {
+		pthread_mutex_lock(&mutex);
+		items_produced++;
+		/* rsleep is required */
+		rsleep(100);
 
-		rsleep(100); // simulating all kind of activities...
+		while (occupied >= BUFFER_SIZE)
+			pthread_cond_wait(&less, &mutex);
 
-		// TODO:
-		// * put the item into buffer[]
-		//
-		// follow this pseudocode (according to the ConditionSynchronization lecture):
-		//      mutex-lock;
-		//      while not condition-for-this-producer
-		//          wait-cv;
-		//      critical-section;
-		//      possible-cv-signals;
-		//      mutex-unlock;
-		//
-		// (see condition_test() in condition_basics.c how to use condition variables)
+		assert(occupied < BUFFER_SIZE);
+
+		buffer[nextin++] = get_next_item(); //item++;
+
+		nextin %= BUFFER_SIZE;
+		occupied++;
+
+		pthread_cond_signal(&more);
+		pthread_mutex_unlock(&mutex);
 	}
-	return (NULL);
+	return NULL;
 }
 
 /* consumer thread */
 static void *consumer(void *arg)
 {
-	while (true /* TODO: not all items retrieved from buffer[] */)
-	{
-		// TODO:
-		// * get the next item from buffer[]
-		// * print the number to stdout
-		//
-		// follow this pseudocode (according to the ConditionSynchronization lecture):
-		//      mutex-lock;
-		//      while not condition-for-this-consumer
-		//          wait-cv;
-		//      critical-section;
-		//      possible-cv-signals;
-		//      mutex-unlock;
+	/* temporarely stores items */
+	ITEM item;
 
-		rsleep(100); // simulating all kind of activities...
+	/* stops consuming when all items are consumed */
+	for (size_t i = 0; i < NROF_ITEMS; i++) {
+		/* rsleep is required */
+		rsleep(100);
+		pthread_mutex_lock(&mutex);
+		while (occupied <= 0)
+			pthread_cond_wait(&more, &mutex);
+
+		assert(occupied > 0);
+
+		item = buffer[nextout++];
+		nextout %= BUFFER_SIZE;
+		occupied--;
+
+		pthread_cond_signal(&less);
+		pthread_mutex_unlock(&mutex);
+
+		printf("%d\n", item);
 	}
-	return (NULL);
+	return NULL;
 }
 
 /*
