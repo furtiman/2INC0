@@ -73,10 +73,10 @@ static void *producer(void *arg)
 	//static ITEM item;
 	/* is this considered busy waiting? */
 	while (items_produced < NROF_ITEMS) {
-		pthread_mutex_lock(&mutex);
-		items_produced++;
 		/* rsleep is required */
 		rsleep(100);
+		pthread_mutex_lock(&mutex);
+		items_produced++;
 
 		while (occupied >= BUFFER_SIZE)
 			pthread_cond_wait(&less, &mutex);
