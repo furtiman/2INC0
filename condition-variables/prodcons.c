@@ -70,7 +70,7 @@ static void *producer(void *arg)
 	/* keeps track of number of items produced */
 	static uint16_t items_produced = 0;
 	/* item variable can be used to bypass get_next_item(), to check if the fifo works */
-	static ITEM item;
+	//static ITEM item;
 	/* is this considered busy waiting? */
 	while (items_produced < NROF_ITEMS) {
 		/* rsleep is required */
@@ -83,7 +83,7 @@ static void *producer(void *arg)
 
 		assert(occupied < BUFFER_SIZE);
 
-		buffer[nextin++] = item++;
+		buffer[nextin++] = get_next_item(); //item++;
 
 		nextin %= BUFFER_SIZE;
 		occupied++;
